@@ -1,0 +1,24 @@
+{
+    "contact_us":{ 
+        "complain":1230,
+        "careers":4393,
+        "suggestion":1923
+    },
+    "gossip":{ 
+        "celebrities":1359,
+        "royalty":6732,
+        "reality_tv":10203
+    },
+    "money":{ 
+        "stocks":1023,
+        "bonds":320,
+        "derivatives":1938,
+        "fund":932,
+        "i_have_none":29
+    },
+    "politics": {
+        "local":1092,
+        "white_house":291,
+        "global":102
+    } 
+}
