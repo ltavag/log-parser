@@ -21,6 +21,9 @@ NUMBER_OF_USERS = 20
 NUMBER_OF_IPS = 20
 NUMBER_OF_AGENTS = 20
 MAX_DELAY = 400
+METHODS = ['GET']
+ROUTES = json.load(open('site.json'))
+RESPONSES = ['200'] * 10 + ['500', '408']
 
 
 def get_ips(number):
@@ -77,18 +80,17 @@ def generate_log():
 
 
 if __name__ == '__main__':
-    global USERS, IPS, METHODS, ROUTES, RESPONSES
+    global USERS, IPS
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument('--number-of-ips',default=NUMBER_OF_IPS,help='The number of IPs to cycle through in the logs')
-    parser.add_argument('--number-of-users',default=NUMBER_OF_USERS,help='The number of User IDs to cycle through in the logs')
+    parser.add_argument('--number-of-ips', default=NUMBER_OF_IPS,
+                        help='The number of IPs to cycle through in the logs')
+    parser.add_argument('--number-of-users', default=NUMBER_OF_USERS,
+                        help='The number of User IDs to cycle through in the logs')
     args = parser.parse_args()
 
     USERS = [x.lower() for x in get_users(args.number_of_users)]
     IPS = list(get_ips(args.number_of_ips))
-    METHODS = ['GET']
-    ROUTES = json.load(open('site.json'))
-    RESPONSES = ['200'] * 10 + ['500', '408']
 
     while True:
         time.sleep(random.choice(range(0, MAX_DELAY)) / 1000.)
