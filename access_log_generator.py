@@ -15,6 +15,7 @@ import subprocess
 import datetime
 import json
 import time
+import sys
 
 NUMBER_OF_USERS = 20
 NUMBER_OF_IPS = 20
@@ -92,3 +93,4 @@ if __name__ == '__main__':
     while True:
         time.sleep(random.choice(range(0, MAX_DELAY)) / 1000.)
         print(generate_log())
+        sys.stdout.flush()
