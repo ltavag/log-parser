@@ -1,15 +1,13 @@
 #! /usr/bin/python3
 
 from collections import namedtuple, defaultdict
-from access_log_generator import RESPONSES
 
-
-DIMENSIONS = ['section', 'user', 'response_code', 'ip']
+DIMENSIONS = ['section', 'user', 'response_code', 'ip', 'general']
 
 """
     Metric dicts are of the form
     {
-        "requests":13,
+        "hits":13,
         "section":{
                     "politics":1,
                     "jobs":1,
@@ -23,6 +21,13 @@ DIMENSIONS = ['section', 'user', 'response_code', 'ip']
 
 
 class MetricStorage(dict):
+    """
+        This data structure is meant to
+        keep track of a moving window of stats.
+        Once all intervals have stats, it loops
+        back around so that the a constant amount
+        of space is used once full.
+    """
     current_interval = 0
 
     def __init__(self, intervals=12):
@@ -37,19 +42,26 @@ class MetricStorage(dict):
         self[self.current_interval] = metrics
 
     def get_current_metrics(self):
-        return self[current_interval]
+        return self.get(self.current_interval, {})
 
     def __add__(self, metrics):
         self.store(metrics)
         return self
 
     def window_sum(self, dimension):
-        if dimension == 'requests':
-            return sum(self[x]['requests'] for x in range(0, self.intervals) if x in self)
+        x, y = dimension.split('.')
+        return sum(self[i][x][y] for i in self.keys())
 
-        totals = defaultdict(int)
-        for interval, metrics in self.items():
-            for k, v in metrics.items():
-                totals[k] += v
+    def alert_triggered(self, dimension, operator, threshold):
+        total = self.window_sum(dimension)
+        avg = total / self.intervals
 
-        return totals
+        if operator == 'GREATER':
+            if avg >= threshold:
+                return True, total
+
+        if operator == 'LESS':
+            if avg <= threshold:
+                return True, total
+
+        return False, None

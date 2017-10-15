@@ -7,7 +7,8 @@ from metrics import MetricStorage, DIMENSIONS
 import json
 import datetime
 
-REPORTING_TIME = 2
+REPORTING_TIME = 5
+ALERT_INTERVAL = 25
 LOG_PARTS = ['ip',
              'userid',
              'user',
@@ -16,9 +17,12 @@ LOG_PARTS = ['ip',
              'path',
              'response_code',
              'size']
-DB = MetricStorage()
 METRICS = None
 LAST_TIMESTAMP = None
+INTERVALS = int(ALERT_INTERVAL / REPORTING_TIME)
+DB = MetricStorage(intervals=INTERVALS)
+ALERTS = json.load(open('alerts.json'))
+ALERT_STATUSES = {k: False for k in ALERTS}
 
 
 def rotate_metrics_out():
@@ -27,7 +31,6 @@ def rotate_metrics_out():
     if METRICS:
         DB += METRICS
     METRICS = {x: defaultdict(int) for x in DIMENSIONS}
-    METRICS['requests'] = 0
 
 
 rotate_metrics_out()
@@ -48,6 +51,8 @@ def parse_log(log):
     log_dict['section'] = log_dict['path'].split('/')[1]
     log_dict['timestamp'] = datetime.datetime.strptime(log_dict['time'][1:-1],
                                                        '%d/%b/%Y:%H:%M:%S %z').timestamp()
+    log_dict['general'] = 'hits'
+    # print(log_dict)
 
     if not LAST_TIMESTAMP:
         LAST_TIMESTAMP = log_dict['timestamp']
@@ -56,11 +61,7 @@ def parse_log(log):
         LAST_TIMESTAMP = log_dict['timestamp']
 
     for k in METRICS:
-        if k == 'requests':
-            continue
         METRICS[k][log_dict[k]] += 1
-
-    METRICS['requests'] += 1
 
 
 def process_log(fd):
@@ -69,26 +70,51 @@ def process_log(fd):
 
 
 @asyncio.coroutine
-def report():
+def display_report():
     while True:
         yield from asyncio.sleep(REPORTING_TIME)
-        print('{} requests in the last {} seconds'.format(
-            METRICS['requests'], REPORTING_TIME))
+        last_metrics = DB.get_current_metrics()
 
-        for section in METRICS['section']:
-            print(section, METRICS['section'][section])
-
-        all_stored_requests = DB.window_sum('requests')
-        if all_stored_requests / 12. > 9:
-            print("High traffic generated an alert - hits = {value}, triggered at {time}".format(
-                value=all_stored_requests, time=LAST_TIMESTAMP))
+        if last_metrics:
+            display_regular_stats(last_metrics)
+            evaluate_alerts()
 
 
-def main():
-    loop = asyncio.get_event_loop()
-    loop.add_reader(sys.stdin, process_log, sys.stdin)
-    loop.run_until_complete(report())
+def display_regular_stats(metrics):
+    """
+        Make sure we report from the last full bucket
+        of metrics. This way we can prevent issues where
+        a delay in the logs causes our reporting interval
+        to get out of sync with the access logs coming in.
+    """
+    print('{} hits in the last {} seconds'.format(
+        metrics['general']['hits'], REPORTING_TIME))
+
+    for section in metrics['section']:
+        print(section, metrics['section'][section])
+
+
+def evaluate_alerts():
+    for alert_name, alert in ALERTS.items():
+        triggered, alert_val = DB.alert_triggered(**alert)
+
+        if not ALERT_STATUSES[alert_name] and \
+                triggered:
+            ALERT_STATUSES[alert_name] = True
+            print("{alert_name} generated an alert - {dimension} = {value}, triggered at {time}".format(
+                dimension=alert['dimension'],
+                alert_name=alert_name,
+                value=alert_val,
+                time=LAST_TIMESTAMP))
+
+        if ALERT_STATUSES[alert_name] and \
+                not triggered:
+            ALERT_STATUSES[alert_name] = False
+            print("{alert_name} alert has recovered".format(
+                alert_name=alert_name))
 
 
 if __name__ == '__main__':
-    main()
+    loop = asyncio.get_event_loop()
+    loop.add_reader(sys.stdin, process_log, sys.stdin)
+    loop.run_until_complete(display_report())
