@@ -6,6 +6,7 @@ from collections import defaultdict
 from metrics import MetricStorage, DIMENSIONS
 import json
 import datetime
+from display import *
 
 REPORTING_TIME = 5
 ALERT_INTERVAL = 25
@@ -78,6 +79,7 @@ def display_report():
         if last_metrics:
             display_regular_stats(last_metrics)
             evaluate_alerts()
+            print('\n')
 
 
 def display_regular_stats(metrics):
@@ -87,11 +89,21 @@ def display_regular_stats(metrics):
         a delay in the logs causes our reporting interval
         to get out of sync with the access logs coming in.
     """
-    print('{} hits in the last {} seconds'.format(
-        metrics['general']['hits'], REPORTING_TIME))
+    display_message('Last {} seconds'.format(REPORTING_TIME))
 
-    for section in metrics['section']:
-        print(section, metrics['section'][section])
+    hits = metrics['general']['hits']
+    pct_200 = str(metrics['response_code']['200'] * 100 / float(hits))[:4]
+
+    display_stats({'Total Requests': hits,
+                   '200 Success %': pct_200})
+
+    top_sections = [x for x in metrics['section']
+                    if metrics['section'][x] == max(metrics['section'].values())]
+    top_users = [x for x in metrics['user'] if metrics['user']
+                 [x] == max(metrics['user'].values())]
+
+    display_stats({'Top Section(s)': ','.join(top_sections),
+                   'Top User(s)': ','.join(top_users)})
 
 
 def evaluate_alerts():
@@ -101,7 +113,7 @@ def evaluate_alerts():
         if not ALERT_STATUSES[alert_name] and \
                 triggered:
             ALERT_STATUSES[alert_name] = True
-            print("{alert_name} generated an alert - {dimension} = {value}, triggered at {time}".format(
+            display_alert_triggered("{alert_name} generated an alert - {dimension} = {value}, triggered at {time}".format(
                 dimension=alert['dimension'],
                 alert_name=alert_name,
                 value=alert_val,
@@ -110,7 +122,7 @@ def evaluate_alerts():
         if ALERT_STATUSES[alert_name] and \
                 not triggered:
             ALERT_STATUSES[alert_name] = False
-            print("{alert_name} alert has recovered".format(
+            display_alert_resolved("{alert_name} alert has recovered".format(
                 alert_name=alert_name))
 
 
