@@ -1,6 +1,6 @@
 #! /usr/bin/python3
 
-from collections import namedtuple
+from collections import namedtuple, defaultdict
 from access_log_generator import RESPONSES
 
 
@@ -9,6 +9,7 @@ DIMENSIONS = ['section', 'user', 'response_code', 'ip']
 """
     Metric dicts are of the form
     {
+        "requests":13,
         "section":{
                     "politics":1,
                     "jobs":1,
@@ -42,8 +43,13 @@ class MetricStorage(dict):
         self.store(metrics)
         return self
 
-    def high_traffic(self, threshold):
-        avg = sum(self[x]['response'][y]
-                  for x in range(0, self.intervals)
-                  for y in RESPONSES) / float(self.intervals)
-        return avg > threshold
+    def window_sum(self, dimension):
+        if dimension == 'requests':
+            return sum(self[x]['requests'] for x in range(0, self.intervals) if x in self)
+
+        totals = defaultdict(int)
+        for interval, metrics in self.items():
+            for k, v in metrics.items():
+                totals[k] += v
+
+        return totals

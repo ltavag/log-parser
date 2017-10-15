@@ -5,6 +5,7 @@ import sys
 from collections import defaultdict
 from metrics import MetricStorage, DIMENSIONS
 import json
+import datetime
 
 REPORTING_TIME = 2
 LOG_PARTS = ['ip',
@@ -17,35 +18,53 @@ LOG_PARTS = ['ip',
              'size']
 DB = MetricStorage()
 METRICS = None
+LAST_TIMESTAMP = None
 
 
 def rotate_metrics_out():
-    global RECENT_REQUESTS
-    global TOP_SECTIONS
     global METRICS
     global DB
-
-    print(json.dumps(DB, indent=2))
     if METRICS:
         DB += METRICS
-    RECENT_REQUESTS = 0
     METRICS = {x: defaultdict(int) for x in DIMENSIONS}
+    METRICS['requests'] = 0
 
 
 rotate_metrics_out()
 
 
 def parse_log(log):
+    """
+        This function is responsible for:
+            1. Parsing each log
+            2. Incrementing metrics using information in the log
+            3. Using the timestamp of the log to determine if
+               we need to start a new time based partition in our
+               metrics data structure
+    """
+    global LAST_TIMESTAMP
+
     log_dict = dict(zip(LOG_PARTS, log.split('\t')[:8]))
     log_dict['section'] = log_dict['path'].split('/')[1]
+    log_dict['timestamp'] = datetime.datetime.strptime(log_dict['time'][1:-1],
+                                                       '%d/%b/%Y:%H:%M:%S %z').timestamp()
+
+    if not LAST_TIMESTAMP:
+        LAST_TIMESTAMP = log_dict['timestamp']
+    if log_dict['timestamp'] - LAST_TIMESTAMP >= REPORTING_TIME:
+        rotate_metrics_out()
+        LAST_TIMESTAMP = log_dict['timestamp']
+
     for k in METRICS:
+        if k == 'requests':
+            continue
         METRICS[k][log_dict[k]] += 1
+
+    METRICS['requests'] += 1
 
 
 def process_log(fd):
-    global RECENT_REQUESTS
     data = fd.readline()
-    RECENT_REQUESTS += 1
     parse_log(data)
 
 
@@ -54,12 +73,15 @@ def report():
     while True:
         yield from asyncio.sleep(REPORTING_TIME)
         print('{} requests in the last {} seconds'.format(
-            RECENT_REQUESTS, REPORTING_TIME))
+            METRICS['requests'], REPORTING_TIME))
 
         for section in METRICS['section']:
             print(section, METRICS['section'][section])
 
-        rotate_metrics_out()
+        all_stored_requests = DB.window_sum('requests')
+        if all_stored_requests / 12. > 9:
+            print("High traffic generated an alert - hits = {value}, triggered at {time}".format(
+                value=all_stored_requests, time=LAST_TIMESTAMP))
 
 
 def main():
