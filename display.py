@@ -24,6 +24,6 @@ def display_stats(stats):
 
 def display_alerts(triggered, resolved):
     for message in triggered:
-        print('\t' + Fore.RED + message + Style.RESET_ALL)
+        print(Fore.RED + message + Style.RESET_ALL)
     for message in resolved:
-        print('\t' + Fore.GREEN + message + Style.RESET_ALL)
+        print(Fore.GREEN + message + Style.RESET_ALL)

@@ -8,9 +8,11 @@ import json
 import datetime
 from display import *
 import alerts
+import os
 
-ALERT_INTERVAL = 25
-REPORTING_TIME = 5
+HERE = os.path.dirname(os.path.realpath(__file__))
+ALERT_INTERVAL = 120
+REPORTING_TIME = 10
 LOG_PARTS = ['ip',
              'userid',
              'user',
@@ -22,7 +24,7 @@ LOG_PARTS = ['ip',
 METRICS = None
 INTERVALS = int(ALERT_INTERVAL / REPORTING_TIME)
 DB = MetricStorage(intervals=INTERVALS)
-AlertSystem = alerts.Alerter('alerts.json', ALERT_INTERVAL)
+AlertSystem = alerts.Alerter(os.path.join(HERE, 'alerts.json'), ALERT_INTERVAL)
 
 
 def commit_metrics():
@@ -101,16 +103,34 @@ def display_report():
     stats = calculate_stats(DB.get_current_metrics())
     triggered, resolved = AlertSystem.evaluate_alerts(DB)
 
-    display_message('Last {} seconds'.format(REPORTING_TIME))
-    display_stats(stats)
     display_alerts(triggered, resolved)
-    print('\n')
+    if not args.alerts_only:
+        display_message('Last {} seconds'.format(REPORTING_TIME))
+        display_stats(stats)
+        print('\n')
+
+
+@asyncio.coroutine
+def end(time):
+    yield from asyncio.sleep(time)
 
 
 if __name__ == '__main__':
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--non-persistent', action='store_true',
+                        help='Use this when the log file has a definite end (i.e. you are running tail -f')
+    parser.add_argument('--seconds', type=int, default=5,
+                        help='Time to run the process (defaults to infinite)')
+    parser.add_argument('--alerts-only', action='store_true',
+                        help='Only display alerts')
+    args = parser.parse_args()
     try:
         loop = asyncio.get_event_loop()
         loop.add_reader(sys.stdin, process_log, sys.stdin)
-        loop.run_forever()
+        if args.non_persistent:
+            loop.run_until_complete(end(args.seconds))
+        else:
+            loop.run_forever()
     except KeyboardInterrupt:
         pass

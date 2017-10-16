@@ -2,6 +2,6 @@
     "High Traffic": {
         "dimension": "general.hits",
         "operator": "GREATER",
-        "threshold": 25
+        "threshold": 50
     }
 }
