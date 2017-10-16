@@ -7,7 +7,10 @@ DIMENSIONS = ['section', 'user', 'response_code', 'ip', 'general']
 """
     Metric dicts are of the form
     {
-        "hits":13,
+        "general":
+                  {
+                    "hits":13,
+                  },
         "section":{
                     "politics":1,
                     "jobs":1,
@@ -59,10 +62,10 @@ class MetricStorage(dict):
 
         if operator == 'GREATER':
             if avg >= threshold:
-                return True, total
+                return True, avg
 
         if operator == 'LESS':
             if avg <= threshold:
-                return True, total
+                return True, avg
 
         return False, None
