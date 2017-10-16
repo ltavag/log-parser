@@ -13,17 +13,17 @@ def display_stats(stats):
         values that are justified to uniform 
         length
     """
-    message = '\t' + Fore.BLUE
-    for k, v in stats.items():
-        message += '{}: {}'.format(k, v).ljust(FIELD_LENGTH, ' ')
+    for stat_line in stats:
+        message = '\t' + Fore.BLUE
+        for k, v in stat_line.items():
+            message += '{}: {}'.format(k, v).ljust(FIELD_LENGTH, ' ')
 
-    message += Style.RESET_ALL
-    print(message)
-
-
-def display_alert_triggered(message):
-    print('\t' + Fore.RED + message + Style.RESET_ALL)
+        message += Style.RESET_ALL
+        print(message)
 
 
-def display_alert_resolved(message):
-    print('\t' + Fore.GREEN + message + Style.RESET_ALL)
+def display_alerts(triggered, resolved):
+    for message in triggered:
+        print('\t' + Fore.RED + message + Style.RESET_ALL)
+    for message in resolved:
+        print('\t' + Fore.GREEN + message + Style.RESET_ALL)

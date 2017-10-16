@@ -7,9 +7,10 @@ from metrics import MetricStorage, DIMENSIONS
 import json
 import datetime
 from display import *
+import alerts
 
-REPORTING_TIME = 5
 ALERT_INTERVAL = 25
+REPORTING_TIME = 5
 LOG_PARTS = ['ip',
              'userid',
              'user',
@@ -19,14 +20,12 @@ LOG_PARTS = ['ip',
              'response_code',
              'size']
 METRICS = None
-LAST_TIMESTAMP = None
 INTERVALS = int(ALERT_INTERVAL / REPORTING_TIME)
 DB = MetricStorage(intervals=INTERVALS)
-ALERTS = json.load(open('alerts.json'))
-ALERT_STATUSES = {k: False for k in ALERTS}
+AlertSystem = alerts.Alerter('alerts.json', ALERT_INTERVAL)
 
 
-def rotate_metrics_out():
+def commit_metrics():
     global METRICS
     global DB
     if METRICS:
@@ -34,10 +33,24 @@ def rotate_metrics_out():
     METRICS = {x: defaultdict(int) for x in DIMENSIONS}
 
 
-rotate_metrics_out()
+commit_metrics()
 
 
-def parse_log(log):
+def special_split(x):
+    """
+        Special split method to prevent
+        fragmentation of time stamp.
+    """
+    ret = []
+    split = iter(x.split())
+    for y in split:
+        if y.startswith('['):
+            y += ' ' + split.__next__()
+        ret.append(y)
+    return ret
+
+
+def process_log(fd):
     """
         This function is responsible for:
             1. Parsing each log
@@ -46,87 +59,58 @@ def parse_log(log):
                we need to start a new time based partition in our
                metrics data structure
     """
-    global LAST_TIMESTAMP
 
-    log_dict = dict(zip(LOG_PARTS, log.split('\t')[:8]))
-    log_dict['section'] = log_dict['path'].split('/')[1]
+    log = fd.readline()
+    log_dict = dict(zip(LOG_PARTS, special_split(log)[:8]))
+    if not log_dict:
+        return
+    split_path = log_dict.get('path', '').split('/')
+    log_dict['section'] = split_path[1] if len(split_path) > 1 else ''
     log_dict['timestamp'] = datetime.datetime.strptime(log_dict['time'][1:-1],
                                                        '%d/%b/%Y:%H:%M:%S %z').timestamp()
     log_dict['general'] = 'hits'
-    # print(log_dict)
 
-    if not LAST_TIMESTAMP:
-        LAST_TIMESTAMP = log_dict['timestamp']
-    if log_dict['timestamp'] - LAST_TIMESTAMP >= REPORTING_TIME:
-        rotate_metrics_out()
-        LAST_TIMESTAMP = log_dict['timestamp']
+    if not DB.last_timestamp:
+        DB.last_timestamp = log_dict['timestamp']
+
+    if log_dict['timestamp'] - DB.last_timestamp >= REPORTING_TIME:
+        DB.last_timestamp = log_dict['timestamp']
+        commit_metrics()
+        display_report()
 
     for k in METRICS:
         METRICS[k][log_dict[k]] += 1
 
 
-def process_log(fd):
-    data = fd.readline()
-    parse_log(data)
-
-
-@asyncio.coroutine
-def display_report():
-    while True:
-        yield from asyncio.sleep(REPORTING_TIME)
-        last_metrics = DB.get_current_metrics()
-
-        if last_metrics:
-            display_regular_stats(last_metrics)
-            evaluate_alerts()
-            print('\n')
-
-
-def display_regular_stats(metrics):
-    """
-        Make sure we report from the last full bucket
-        of metrics. This way we can prevent issues where
-        a delay in the logs causes our reporting interval
-        to get out of sync with the access logs coming in.
-    """
-    display_message('Last {} seconds'.format(REPORTING_TIME))
-
+def calculate_stats(metrics):
     hits = metrics['general']['hits']
     pct_200 = str(metrics['response_code']['200'] * 100 / float(hits))[:4]
-
-    display_stats({'Total Requests': hits,
-                   '200 Success %': pct_200})
-
     top_sections = [x for x in metrics['section']
                     if metrics['section'][x] == max(metrics['section'].values())]
     top_users = [x for x in metrics['user'] if metrics['user']
                  [x] == max(metrics['user'].values())]
 
-    display_stats({'Top Section(s)': ','.join(top_sections),
-                   'Top User(s)': ','.join(top_users)})
+    all_stats = []
+    all_stats.append({'Total Requests': hits, '200 Success %': pct_200})
+    all_stats.append({'Top Section(s)': ','.join(
+        top_sections), 'Top User(s)': ','.join(top_users)})
+    return all_stats
 
 
-def evaluate_alerts():
-    for alert_name, alert in ALERTS.items():
-        triggered, alert_val = DB.alert_triggered(**alert)
+def display_report():
+    stats = calculate_stats(DB.get_current_metrics())
+    triggered, resolved = AlertSystem.evaluate_alerts(DB)
 
-        if not ALERT_STATUSES[alert_name] and \
-                triggered:
-            ALERT_STATUSES[alert_name] = True
-            display_alert_triggered("{alert_name} generated an alert - {dimension} = {value}, triggered at {time}".format(
-                dimension=alert['dimension'],
-                alert_name=alert_name,
-                value=alert_val,
-                time=LAST_TIMESTAMP))
-
-        if ALERT_STATUSES[alert_name] and \
-                not triggered:
-            ALERT_STATUSES[alert_name] = False
-            display_alert_resolved("{alert_name} alert has recovered".format(
-                alert_name=alert_name))
+    display_message('Last {} seconds'.format(REPORTING_TIME))
+    display_stats(stats)
+    display_alerts(triggered, resolved)
+    print('\n')
 
 
 if __name__ == '__main__':
-    loop = asyncio.get_event_loop()
-    loop.add_reader(sys.stdin, process_log, sys.stdin)
-    loop.run_until_complete(display_report())
+    try:
+        loop = asyncio.get_event_loop()
+        loop.add_reader(sys.stdin, process_log, sys.stdin)
+        loop.run_forever()
+    except KeyboardInterrupt:
+        pass

@@ -29,6 +29,7 @@ class MetricStorage(dict):
         of space is used once full.
     """
     current_interval = 0
+    last_timestamp = None
 
     def __init__(self, intervals=12):
         self.intervals = intervals
